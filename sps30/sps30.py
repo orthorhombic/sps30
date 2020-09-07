@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 # from smbus2 import SMBus, i2c_msg
+import machine
 import struct
 from time import sleep
+import ubinascii
 
 
 def calculateCRC(input):
@@ -41,9 +43,13 @@ def bytes_to_int(bytes):
 
 
 def convertPMValues(value):
+    # value = pm_list[0]
+    # print(value)
     string_value = str(hex(value)).replace("0x", "")
+    # print(string_value)
 
-    byte_value = bytes.fromhex(string_value)
+    byte_value = ubinascii.unhexlify(string_value)
+    # print(byte_value)
 
     return struct.unpack(">f", byte_value)[0]
 
@@ -81,21 +87,32 @@ class SPS30:
         "typical": None,
     }
 
-    def __init__(self, port):
-        self.bus = SMBus(port)
+    measurement_order = [
+        "pm1p0",
+        "pm2p5",
+        "pm4p0",
+        "pm10p0",
+        "nc0p5",
+        "nc1p0",
+        "nc2p5",
+        "nc4p0",
+        "nc10p0",
+        "typical",
+    ]
+
+    def __init__(self, scl=5, sda=4):
+        self.bus = machine.I2C(scl=machine.Pin(scl), sda=machine.Pin(sda))
+        # self.bus = machine.I2C(scl=machine.Pin(5), sda=machine.Pin(4))
 
     def read_article_code(self):
         result = []
         article_code = []
 
-        write = i2c_msg.write(self.SPS_ADDR, self.R_ARTICLE_CD)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.R_ARTICLE_CD))
+        read = self.bus.readfrom(self.SPS_ADDR, 48)
 
-        read = i2c_msg.read(self.SPS_ADDR, 48)
-        self.bus.i2c_rdwr(read)
-
-        for i in range(read.len):
-            result.append(bytes_to_int(read.buf[i]))
+        for i in range(len(read)):
+            result.append(read[i])
 
         if checkCRC(result):
             for i in range(2, len(result), 3):
@@ -109,14 +126,11 @@ class SPS30:
         result = []
         device_serial = []
 
-        write = i2c_msg.write(self.SPS_ADDR, self.R_SERIAL_NUM)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.R_SERIAL_NUM))
+        read = self.bus.readfrom(self.SPS_ADDR, 48)
 
-        read = i2c_msg.read(self.SPS_ADDR, 48)
-        self.bus.i2c_rdwr(read)
-
-        for i in range(read.len):
-            result.append(bytes_to_int(read.buf[i]))
+        for i in range(len(read)):
+            result.append(read[i])
 
         if checkCRC(result):
             for i in range(2, len(result), 3):
@@ -129,14 +143,11 @@ class SPS30:
     def read_auto_cleaning_interval(self):
         result = []
 
-        write = i2c_msg.write(self.SPS_ADDR, self.RW_AUTO_CLN)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.RW_AUTO_CLN))
+        read = self.bus.readfrom(self.SPS_ADDR, 6)
 
-        read = i2c_msg.read(self.SPS_ADDR, 6)
-        self.bus.i2c_rdwr(read)
-
-        for i in range(read.len):
-            result.append(bytes_to_int(read.buf[i]))
+        for i in range(len(read)):
+            result.append(read[i])
 
         if checkCRC(result):
             result = (
@@ -160,12 +171,11 @@ class SPS30:
 
         self.RW_AUTO_CLN.append(calculateCRC(self.RW_AUTO_CLN[5:7]))
 
-        write = i2c_msg.write(self.SPS_ADDR, self.RW_AUTO_CLN)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.RW_AUTO_CLN))
 
     def start_fan_cleaning(self):
-        write = i2c_msg.write(self.SPS_ADDR, self.START_CLN)
-        self.bus.i2c_rdwr(write)
+        # onl works during measurement mode
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.START_CLN))
 
     def start_measurement(self):
         self.START_MEAS.append(0x03)
@@ -174,24 +184,20 @@ class SPS30:
         crc = calculateCRC(self.START_MEAS[2:4])
         self.START_MEAS.append(crc)
 
-        write = i2c_msg.write(self.SPS_ADDR, self.START_MEAS)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.START_MEAS))
 
     def stop_measurement(self):
-        write = i2c_msg.write(self.SPS_ADDR, self.STOP_MEAS)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.STOP_MEAS))
 
     def read_data_ready_flag(self):
         result = []
 
-        write = i2c_msg.write(self.SPS_ADDR, self.R_DATA_RDY)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.R_DATA_RDY))
 
-        read = i2c_msg.read(self.SPS_ADDR, 3)
-        self.bus.i2c_rdwr(read)
+        read = self.bus.readfrom(self.SPS_ADDR, 3)
 
-        for i in range(read.len):
-            result.append(bytes_to_int(read.buf[i]))
+        for i in range(len(read)):
+            result.append(read[i])
 
         if checkCRC(result):
             return result[1]
@@ -201,14 +207,12 @@ class SPS30:
     def read_measured_values(self):
         result = []
 
-        write = i2c_msg.write(self.SPS_ADDR, self.R_VALUES)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.R_VALUES))
 
-        read = i2c_msg.read(self.SPS_ADDR, 60)
-        self.bus.i2c_rdwr(read)
+        read = self.bus.readfrom(self.SPS_ADDR, 60)
 
-        for i in range(read.len):
-            result.append(bytes_to_int(read.buf[i]))
+        for i in range(len(read)):
+            result.append(read[i])
 
         if checkCRC(result):
             self.parse_sensor_values(result)
@@ -217,8 +221,7 @@ class SPS30:
             return self.MEASURED_VALUES_ERROR
 
     def device_reset(self):
-        write = i2c_msg.write(self.SPS_ADDR, self.RESET)
-        self.bus.i2c_rdwr(write)
+        self.bus.writeto(self.SPS_ADDR, bytearray(self.RESET))
         sleep(1)
 
     def parse_sensor_values(self, input):
@@ -233,6 +236,7 @@ class SPS30:
             )
             pm_list.append(value)
 
-        for i in self.dict_values.keys():
+        # ensure values are being assigned to the correct key
+        for i in self.measurement_order:
             self.dict_values[i] = convertPMValues(pm_list[index])
             index += 1
