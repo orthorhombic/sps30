@@ -100,9 +100,8 @@ class SPS30:
         "typical",
     ]
 
-    def __init__(self, scl=5, sda=4):
-        self.bus = machine.I2C(scl=machine.Pin(scl), sda=machine.Pin(sda))
-        # self.bus = machine.I2C(scl=machine.Pin(5), sda=machine.Pin(4))
+    def __init__(self, i2c):
+        self.bus = i2c
 
     def read_article_code(self):
         result = []
